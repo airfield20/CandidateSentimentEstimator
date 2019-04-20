@@ -12,6 +12,7 @@ if strip_mentions is true, will remove @ mentions from tweets before adding it
 
 returns the tweets as a pandas data frame
 '''
+labels = ['anger', 'anticipation', 'disgust', 'fear', 'joy', 'love', 'optimism', 'pessimism', 'sadness', 'surprise', 'trust']
 
 def read_tweets(file, strip_mentions=True, sep_char=',', tweet_column_name='Tweet'):
     data = pd.read_csv(file, sep=sep_char, encoding='utf8')
@@ -20,7 +21,10 @@ def read_tweets(file, strip_mentions=True, sep_char=',', tweet_column_name='Twee
         data = data.replace({0: False, 1: True})
         #pd.options.display.encoding = 'unicode'
 
-        print(data)
+    data_df = data[tweet_column_name]
+    label_df = data[labels]
+
+    return data_df, label_df
     
 if __name__ == '__main__':
     read_tweets('2018-E-c-En-train.txt', sep_char='\t')
