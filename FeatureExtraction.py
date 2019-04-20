@@ -5,18 +5,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 
-'''
-feature extractors
-
-- each function in this file should return a Series or Dataframe of size n_samples x n_features
-- when training, we can append all these together selectively, to obtain the final feature set
-
-'''
-
-labels = ['anger', 'anticipation', 'disgust', 'fear', 'joy', 'love', 'optimism', 'pessimism', 'sadness', 'surprise', 'trust']
 
 # finds the most asscoiated words with a particular emotion #
-def create_word_bags(documents, labels, classes, keep_highest=4, minimum_score=0.1):
+def create_word_bags(documents, labels, classes, keep_highest=4):
     vec = TfidfVectorizer(stop_words='english')
 
     tfidf_whole = vec.fit_transform(documents)
