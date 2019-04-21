@@ -14,16 +14,24 @@ returns the tweets as a pandas data frame
 '''
 class TweetReader:
     labels = ['anger', 'anticipation', 'disgust', 'fear', 'joy', 'love', 'optimism', 'pessimism', 'sadness', 'surprise', 'trust']
-        
-    def read_tweets(self, file, strip_mentions=True, sep_char=',', tweet_column_name='Tweet'):
+
+    def __init__(self, file=None, tweet_column_name='Tweet'):
+        if file:
+            self.path = file
+        else:
+            self.path = None
+        self.data = None
+        self.tweet_column_name=tweet_column_name
+    
+    def read_tweets(self, file, strip_mentions=True, sep_char=','):
         self.data = pd.read_csv(file, sep=sep_char, encoding='utf8').drop('ID', axis=1)
         
         if strip_mentions:
-            self.data[tweet_column_name] = self.data[tweet_column_name].replace(to_replace='(@\S*)', value='', regex = True)
+            self.data[self.tweet_column_name] = self.data[self.tweet_column_name].replace(to_replace='(@\S*)', value='', regex = True)
             self.data = self.data.replace({0: False, 1: True})
             #pd.options.display.encoding = 'unicode'
 
-        data_df = self.data[tweet_column_name]
+        data_df = self.data[self.tweet_column_name]
         label_df = self.data[self.labels]
 
         return data_df, label_df
@@ -31,14 +39,29 @@ class TweetReader:
     def save_tweets(self, path):
         self.data.to_pickle(path)
 
-    def load_tweets(self, path, tweet_column_name='Tweet'):
+    def load_tweets(self, path):
         self.data = pd.read_pickle(path)
 
-        data_df = self.data[tweet_column_name]
+        data_df = self.data[self.tweet_column_name]
         label_df = self.data[self.labels]
 
         return data_df, label_df
 
+    # gets already loaded data if present, or attempts to load it from file otherwise #
+    def get_data(self, path=None, load=True, strip_mentions=True, sep_char=','):
+        if self.data:
+            data_df = self.data[self.tweet_column_name]
+            label_df = self.data[self.labels]
+
+            return data_df, label_df
+        elif self.path:
+            if load:
+                self.load_tweets(path)
+            else:
+                self.read_tweets(path, strip_mentions, sep_char)
+        else:
+            raise ValueError("No data loaded and no path given")
+                
     
 if __name__ == '__main__':
     reader = TweetReader()
