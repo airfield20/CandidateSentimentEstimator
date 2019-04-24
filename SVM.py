@@ -6,6 +6,9 @@ from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
 from TweetReader import TweetReader
+import FeatureExtraction as Extractor
+from nltk import TweetTokenizer
+import argparse
 import emoji
 import pandas as pd
 from sentiment_dict_reader import SentimentDictReader
@@ -102,16 +105,49 @@ def get_most_frequent_pos(df, labels):
     df.apply(lambda row: add_to_dict(row["TWEET"].split(" ")), axis=1)
 
 
+def setup():
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('data', help='path to the data to be used')
+    arg_parser.add_argument('-l', '--load', help='specifies that data is to be loaded from pickled source, not read', action='store_true')
+    classifier_group = arg_parser.add_argument_group('classifiers', 'specify what classifier should be used')
+    classifier_group.add_argument('--svm', help='use the svm classifier', action='store_true')
+    classifier_group.add_argument('--decision', help='use the decision tree classifier', action='store_true')
+    classifier_group.add_argument('--mlp', help='use the mlp classifier', action='store_true')
+    classifier_group.add_argument('--all', help='use all classifiers', action='store_true', default=True)
+
+    args = arg_parser.parse_args()
+
+    return (args.data, args.load, args.svm, args.decision, args.mlp, args.all)
+
+
 if __name__ == '__main__':
+    data, load_data, use_svm, use_decision, use_mlp, use_all = setup()
+
+    if (use_svm or use_decision or use_mlp):
+        use_all = False
+    
     reader = TweetReader()
-    docs_df, label_df = reader.load_tweets('tweet_data/tweet_training.pickle')
+
+    if load_data:
+        docs_df, label_df = reader.load_tweets('tweet_data/tweet_training.pickle')
+    else:
+        docs_df, label_df = reader.read_tweets(data, sep_char='\t')
+        
+    more_features = Extractor.FeatureExtractor(docs_df, label_df, tokenizer=TweetTokenizer(reduce_len=True).tokenize)
+
+    ''' FEATURES '''
+    
     df = pd.DataFrame()
+    
     # positive_words = SentimentDictReader("dictionaries/positive-words.txt")
     positive_words = SentimentDictReader("dictionaries/augmented/positive-words_semeval.txt")
     # negative_words = SentimentDictReader("dictionaries/negative-words.txt")
     negative_words = SentimentDictReader("dictionaries/augmented/negative-words_semeval.txt")
+    
     df["TWEET"] = docs_df
+    
     # df["IS_POS"] = get_pos_neg_labels(label_df)
+    
     labels = get_pos_neg_labels(label_df)
     df["EMOJI"] = df.apply(lambda row: get_emoji(row), axis=1)
     df["HAS_QUESTION_MARK"] = df.apply(lambda row: check_question_mark(row), axis=1)
@@ -120,35 +156,67 @@ if __name__ == '__main__':
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), positive_words.words)), axis=1)
     df["NUM_NEGATIVE_WORDS"] = df.apply(
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), negative_words.words)), axis=1)
+    
     emoji_encoder = preprocessing.LabelEncoder()
     emoji_encoder.fit(df["EMOJI"])
     df["EMOJI"] = pd.Series(emoji_encoder.transform(df["EMOJI"]))
+    
+    df["FRAC_UPPER_CASE"] = more_features.feature_fraction_lower()
+    df["FRAC_TITLED"] = more_features.feature_fraction_titled()
+    
     # get_unigram_dataframe(df)
+    
+    ''' TRAINING '''
 
     X_train, X_test, y_train, y_test = train_test_split(df, labels, test_size=0.25)
     unigram_encoder = get_unigram_encoder(df)
     X_train = X_train.drop(["TWEET"], axis=1)
     X_test = X_test.drop(["TWEET"], axis=1)
 
-    classifier = svm.SVC()
-    classifier.fit(X_train, y_train)
+    if use_svm or use_all:
+        classifier = svm.SVC()
+        classifier.fit(X_train, y_train)
+        y_pred = classifier.predict(X_test)
 
-    # classifier = DecisionTreeClassifier()
-    # classifier.fit(X_train, y_train)
+        f1_score = metrics.f1_score(y_test, y_pred)
+        accuracy = metrics.accuracy_score(y_test, y_pred)
+        report = metrics.classification_report(y_test, y_pred)
 
-    # classifier = MLPClassifier()
-    # classifier.fit(X_train, y_train)
+        # Print out results
+        print("------------- SVM -------------")
+        print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
+        print("F1 score: " + str(f1_score) + "\n")
+        print("Classification report: ")
+        print(str(report))
 
-    y_pred = classifier.predict(X_test)
+    if use_decision or use_all:
+        classifier = DecisionTreeClassifier()
+        classifier.fit(X_train, y_train)
+        y_pred = classifier.predict(X_test)
 
-    f1_score = metrics.f1_score(y_test, y_pred)
-    accuracy = metrics.accuracy_score(y_test, y_pred)
-    report = metrics.classification_report(y_test, y_pred)
+        f1_score = metrics.f1_score(y_test, y_pred)
+        accuracy = metrics.accuracy_score(y_test, y_pred)
+        report = metrics.classification_report(y_test, y_pred)
 
-    # Print out results
-    print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
-    print("F1 score: " + str(f1_score) + "\n")
-    print("Classification report: ")
-    print(str(report))
+        # Print out results
+        print("------------- Decision Tree -------------")
+        print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
+        print("F1 score: " + str(f1_score) + "\n")
+        print("Classification report: ")
+        print(str(report))
 
-    x = 10
+    if use_mlp or use_all:
+        classifier = MLPClassifier()
+        classifier.fit(X_train, y_train)
+        y_pred = classifier.predict(X_test)
+
+        f1_score = metrics.f1_score(y_test, y_pred)
+        accuracy = metrics.accuracy_score(y_test, y_pred)
+        report = metrics.classification_report(y_test, y_pred)
+
+        # Print out results
+        print("------------- MLP -------------")
+        print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
+        print("F1 score: " + str(f1_score) + "\n")
+        print("Classification report: ")
+        print(str(report))
