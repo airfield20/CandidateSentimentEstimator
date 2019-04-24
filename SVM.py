@@ -109,6 +109,7 @@ def setup():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('data', help='path to the data to be used')
     arg_parser.add_argument('-l', '--load', help='specifies that data is to be loaded from pickled source, not read', action='store_true')
+    arg_parser.add_argument('-b', '--bag', help='specifies location of pickled word bags', type=str, default=None)
     classifier_group = arg_parser.add_argument_group('classifiers', 'specify what classifier should be used')
     classifier_group.add_argument('--svm', help='use the svm classifier', action='store_true')
     classifier_group.add_argument('--decision', help='use the decision tree classifier', action='store_true')
@@ -117,11 +118,11 @@ def setup():
 
     args = arg_parser.parse_args()
 
-    return (args.data, args.load, args.svm, args.decision, args.mlp, args.all)
+    return (args.data, args.load, args.bag, args.svm, args.decision, args.mlp, args.all)
 
 
 if __name__ == '__main__':
-    data, load_data, use_svm, use_decision, use_mlp, use_all = setup()
+    data, load_data, bag_file, use_svm, use_decision, use_mlp, use_all = setup()
 
     if (use_svm or use_decision or use_mlp):
         use_all = False
@@ -129,11 +130,11 @@ if __name__ == '__main__':
     reader = TweetReader()
 
     if load_data:
-        docs_df, label_df = reader.load_tweets('tweet_data/tweet_training.pickle')
+        docs_df, label_df = reader.load_tweets(data) #'tweet_data/tweet_training.pickle'
     else:
         docs_df, label_df = reader.read_tweets(data, sep_char='\t')
         
-    more_features = Extractor.FeatureExtractor(docs_df, label_df, tokenizer=TweetTokenizer(reduce_len=True).tokenize)
+    more_features = Extractor.FeatureExtractor(docs_df, label_df, tokenizer=TweetTokenizer(reduce_len=True).tokenize, bag_file=bag_file)
 
     ''' FEATURES '''
     
@@ -151,17 +152,23 @@ if __name__ == '__main__':
     labels = get_pos_neg_labels(label_df)
     df["EMOJI"] = df.apply(lambda row: get_emoji(row), axis=1)
     df["HAS_QUESTION_MARK"] = df.apply(lambda row: check_question_mark(row), axis=1)
+    
     df["NUM_WORDS"] = df.apply(lambda row: len(row['TWEET'].split(' ')), axis=1)
+    #df["NUM_WORDS"] = more_features.feature_doc_len()
+    
     df["NUM_POSITIVE_WORDS"] = df.apply(
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), positive_words.words)), axis=1)
     df["NUM_NEGATIVE_WORDS"] = df.apply(
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), negative_words.words)), axis=1)
+
+    # df[["NUM_POSITIVE_WORDS", "NUM_NEGATIVE_WORDS"]] = more_features.feature_count_pos_neg()
     
     emoji_encoder = preprocessing.LabelEncoder()
     emoji_encoder.fit(df["EMOJI"])
     df["EMOJI"] = pd.Series(emoji_encoder.transform(df["EMOJI"]))
-    
-    df["FRAC_UPPER_CASE"] = more_features.feature_fraction_lower()
+
+    df["FRAC_LOWER_CASE"] = more_features.feature_fraction_lower()
+    df["FRAC_UPPER_CASE"] = more_features.feature_fraction_upper()
     df["FRAC_TITLED"] = more_features.feature_fraction_titled()
     
     # get_unigram_dataframe(df)

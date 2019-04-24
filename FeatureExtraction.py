@@ -14,6 +14,8 @@ class FeatureExtractor:
         self.documents = documents
         self.labels = labels
         self.classes = labels.columns
+        self.pos_labels = ['joy', 'love', 'optimism', 'trust']
+        self.neg_labels = ['anger', 'disgust', 'fear', 'pessimism', 'sadness']
         
         if not stop_words:
             self.custom_stopwords = stop = set([word for word in ENGLISH_STOP_WORDS]).union(set(stopwords.words('English'))).union(set(['\\', ':' '/', '-', "'", '"', '.', ',', "i've", "i'm", "i'll", '&']))
@@ -26,6 +28,7 @@ class FeatureExtractor:
             try:
                 with open(bag_file, 'rb') as file:
                     self.bags = pickle.load(file)
+                    self.reduce_bag_to_pos_neg()
                     self.set_count = len(self.bags[self.classes[0]])
             except IOError:
                 print("An error occured while trying to read file.")
@@ -56,9 +59,23 @@ class FeatureExtractor:
 
             self.bags[cl] = set(bag.head(keep_highest)['word'])
 
+        self.reduce_bag_to_pos_neg()
+
     def save_word_bags(self):
         with open('extracted-bags-count-' + str(self.set_count) + '.pickle', 'wb') as file:
             pickle.dump(self.bags, file)
+
+    def reduce_bag_to_pos_neg(self):
+        assert self.bags, "No word bag found. Did you call create_word_bags() before this?"
+
+        self.positive = set()
+        self.negative = set()
+
+        for bag in self.bags:
+            if bag in self.pos_labels:
+                self.positive = self.positive.union(self.bags[bag])
+            elif bag in self.neg_labels:
+                self.negative = self.negative.union(self.bags[bag])
 
     def feature_count_class_words(self):
         assert self.bags, "No word bag found. Did you call create_word_bags() before this?"
@@ -82,6 +99,31 @@ class FeatureExtractor:
 
         return pd.read_csv(features_csv, engine='c')
 
+    def feature_count_pos_neg(self):
+        assert self.positive, "No positive word bag found. Did you call reduce_bag_to_pos_neg() before this?"
+
+        features_csv = StringIO()
+        feature_writer = writer(features_csv)
+
+        feature_writer.writerow(['positive', 'negative'])
+
+        for idx, document in self.documents.iteritems():
+            positive_count = 0
+            negative_count = 0
+            
+            tokens = self.tokenizer(document)
+            for token in tokens:
+                if token in self.positive:
+                    positive_count += 1
+                elif token in self.negative:
+                    negative_count += 1
+
+            feature_writer.writerow([positive_count, negative_count])
+
+        features_csv.seek(0)
+
+        return pd.read_csv(features_csv, engine='c')
+                
 # document length in words (basically, len(tokenizer(text)) #
     def get_doc_len(self, text):
         return len([word for word in self.tokenizer(text) if word not in string.punctuation])
@@ -125,8 +167,8 @@ if __name__ == '__main__':
     token_gen = TweetTokenizer(reduce_len=True)
     extractor = FeatureExtractor(documents=docs_df, labels=label_df, tokenizer=token_gen.tokenize, bag_file='extracted-bags/extracted-bags-count-90.pickle')
     
-    # extractor.create_word_bags(90)
-    # extractor.save_word_bags()
+    extractor.create_word_bags(150)
+    extractor.save_word_bags()
     
     print(extractor.feature_count_class_words().head(20), '\n')
     print(extractor.feature_doc_len().head(20), '\n')
