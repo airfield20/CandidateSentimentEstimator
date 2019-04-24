@@ -1,4 +1,7 @@
 from sklearn import svm
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
@@ -103,8 +106,10 @@ if __name__ == '__main__':
     reader = TweetReader()
     docs_df, label_df = reader.load_tweets('tweet_data/tweet_training.pickle')
     df = pd.DataFrame()
-    positive_words = SentimentDictReader("dictionaries/positive-words.txt")
-    negative_words = SentimentDictReader("dictionaries/negative-words.txt")
+    # positive_words = SentimentDictReader("dictionaries/positive-words.txt")
+    positive_words = SentimentDictReader("dictionaries/augmented/positive-words_semeval.txt")
+    # negative_words = SentimentDictReader("dictionaries/negative-words.txt")
+    negative_words = SentimentDictReader("dictionaries/augmented/negative-words_semeval.txt")
     df["TWEET"] = docs_df
     # df["IS_POS"] = get_pos_neg_labels(label_df)
     labels = get_pos_neg_labels(label_df)
@@ -118,14 +123,22 @@ if __name__ == '__main__':
     emoji_encoder = preprocessing.LabelEncoder()
     emoji_encoder.fit(df["EMOJI"])
     df["EMOJI"] = pd.Series(emoji_encoder.transform(df["EMOJI"]))
-    get_unigram_dataframe(df)
+    # get_unigram_dataframe(df)
 
     X_train, X_test, y_train, y_test = train_test_split(df, labels, test_size=0.25)
     unigram_encoder = get_unigram_encoder(df)
     X_train = X_train.drop(["TWEET"], axis=1)
     X_test = X_test.drop(["TWEET"], axis=1)
-    classifier = svm.SVC(gamma='scale')
+
+    classifier = svm.SVC()
     classifier.fit(X_train, y_train)
+
+    # classifier = DecisionTreeClassifier()
+    # classifier.fit(X_train, y_train)
+
+    # classifier = MLPClassifier()
+    # classifier.fit(X_train, y_train)
+
     y_pred = classifier.predict(X_test)
 
     f1_score = metrics.f1_score(y_test, y_pred)
