@@ -66,7 +66,8 @@ def get_sentence_bigram_intersection(sentence, bigrams):
     sentence_bigrams = list(nltk.bigrams(tokens))
     bigram_strings = []
     for bigram in sentence_bigrams:
-        bigram_strings.append(emoji.demojize(bigram[0].strip(exclude_chars) + ' ' + bigram[1].strip(exclude_chars)).lower())
+        bigram_strings.append(
+            emoji.demojize(bigram[0].strip(exclude_chars) + ' ' + bigram[1].strip(exclude_chars)).lower())
     temp = set(bigrams)
     lst3 = [value for value in bigram_strings if value in temp]
     return lst3
@@ -117,10 +118,35 @@ def get_most_frequent_pos(df, labels):
     df.apply(lambda row: add_to_dict(row["TWEET"].split(" ")), axis=1)
 
 
+def get_annotated_tweets(fname):
+    with open(fname, 'r') as file:
+        lines = file.readlines()
+    tweets = []
+    for line in lines:
+        tokens = line.split(" ")
+        tweet = ""
+        for index, token in enumerate(reversed(tokens)):
+            if index == 0:
+                if token.strip().upper() == 'N':
+                    classification = False
+                else:
+                    classification = True
+            elif index == 1:
+                time = token
+            else:
+                tweet = token + ' ' + tweet
+        tweets.append({"TWEET": tweet, "IS_POS": classification})
+
+    annotated_df = pd.DataFrame(tweets)
+    annotated_df = annotated_df[["TWEET","IS_POS"]]
+    return annotated_df
+
+
 def setup():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('data', help='path to the data to be used')
-    arg_parser.add_argument('-l', '--load', help='specifies that data is to be loaded from pickled source, not read', action='store_true')
+    arg_parser.add_argument('-l', '--load', help='specifies that data is to be loaded from pickled source, not read',
+                            action='store_true')
     arg_parser.add_argument('-b', '--bag', help='specifies location of pickled word bags', type=str, default=None)
     classifier_group = arg_parser.add_argument_group('classifiers', 'specify what classifier should be used')
     classifier_group.add_argument('--svm', help='use the svm classifier', action='store_true')
@@ -142,11 +168,12 @@ if __name__ == '__main__':
     reader = TweetReader()
 
     if load_data:
-        docs_df, label_df = reader.load_tweets(data) #'tweet_data/tweet_training.pickle'
+        docs_df, label_df = reader.load_tweets(data)  # 'tweet_data/tweet_training.pickle'
     else:
         docs_df, label_df = reader.read_tweets(data, sep_char='\t')
 
-    more_features = Extractor.FeatureExtractor(docs_df, label_df, tokenizer=TweetTokenizer(reduce_len=True).tokenize, bag_file=bag_file)
+    more_features = Extractor.FeatureExtractor(docs_df, label_df, tokenizer=TweetTokenizer(reduce_len=True).tokenize,
+                                               bag_file=bag_file)
 
     ''' FEATURES '''
 
@@ -159,9 +186,15 @@ if __name__ == '__main__':
     negative_words = SentimentDictReader("dictionaries/augmented/negative-words_semeval.txt")
     negative_bigrams = SentimentDictReader("dictionaries/dataset_negative_bigrams")
 
+
+
     df["TWEET"] = docs_df
+    # df = df.append(annotated_tweets,sort=False,ignore_index=True)
+    # df.drop(["IS_POS"],inplace=True,axis=1)
     # df["IS_POS"] = get_pos_neg_labels(label_df)
     labels = get_pos_neg_labels(label_df)
+    # labels = labels.append(annotated_tweets['IS_POS'],ignore_index=True)
+
     df["EMOJI"] = df.apply(lambda row: get_emoji(row), axis=1)
     df["HAS_QUESTION_MARK"] = df.apply(lambda row: check_question_mark(row), axis=1)
     df["NUM_WORDS"] = df.apply(lambda row: len(row['TWEET'].split(' ')), axis=1)
@@ -205,7 +238,48 @@ if __name__ == '__main__':
         # print("Classification report: ")
         # print(str(report))
 
-    if(use_svm or use_all):
+        print('---------EVALUATE MANUALLY ANNOTATED DATA----------')
+        annotated_tweets = get_annotated_tweets("tweet_data/trump10000since2016.json.annotated")
+        ytest = annotated_tweets["IS_POS"]
+        annotated_tweets.drop(["IS_POS"], inplace=True,axis=1)
+        matt_features = Extractor.FeatureExtractor(annotated_tweets['TWEET'], pd.DataFrame(pd.Series(y_test)),
+                                                   tokenizer=TweetTokenizer(reduce_len=True).tokenize,
+                                                   bag_file=None)
+        annotated_tweets["EMOJI"] = annotated_tweets.apply(lambda row: get_emoji(row), axis=1)
+        annotated_tweets["HAS_QUESTION_MARK"] = annotated_tweets.apply(lambda row: check_question_mark(row), axis=1)
+        annotated_tweets["NUM_WORDS"] = annotated_tweets.apply(lambda row: len(row['TWEET'].split(' ')), axis=1)
+        annotated_tweets["NUM_POSITIVE_WORDS"] = annotated_tweets.apply(
+            lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), positive_words.words)), axis=1)
+        annotated_tweets["NUM_NEGATIVE_WORDS"] = annotated_tweets.apply(
+            lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), negative_words.words)), axis=1)
+        annotated_tweets["NUM_POSITIVE_BIGRAMS"] = annotated_tweets.apply(
+            lambda row: len(get_sentence_bigram_intersection(row["TWEET"], positive_bigrams.words)), axis=1)
+        annotated_tweets["NUM_NEGATIVE_BIGRAMS"] = annotated_tweets.apply(
+            lambda row: len(get_sentence_bigram_intersection(row["TWEET"], negative_bigrams.words)), axis=1)
+
+        emoji_encoder = preprocessing.LabelEncoder()
+        emoji_encoder.fit(annotated_tweets["EMOJI"])
+        annotated_tweets["EMOJI"] = pd.Series(emoji_encoder.transform(annotated_tweets["EMOJI"]))
+
+        annotated_tweets["FRAC_LOWER_CASE"] = matt_features.feature_fraction_lower()
+        annotated_tweets["FRAC_UPPER_CASE"] = matt_features.feature_fraction_upper()
+        annotated_tweets["FRAC_TITLED"] = matt_features.feature_fraction_titled()
+        annotated_tweets.drop(['TWEET'],axis=1,inplace=True)
+        ypred = classifier.predict(annotated_tweets)
+
+        f1_score = metrics.f1_score(ytest, ypred)
+        accuracy = metrics.accuracy_score(ytest, ypred)
+        report = metrics.classification_report(ytest, ypred)
+
+        # Print out results
+        print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
+        print("F1 score: " + str(f1_score) + "\n")
+        # print("Classification report: ")
+        # print(str(report))
+
+
+
+    if (use_svm or use_all):
         print('-------------SVM CLASSIFIER---------------')
         SVMclassifier = svm.SVC()
         classify_and_evaluate(SVMclassifier, X_train, y_train, X_test, y_test)
@@ -219,3 +293,4 @@ if __name__ == '__main__':
         print('-------------MLP CLASSIFIER---------------')
         MLPclassifier = MLPClassifier()
         classify_and_evaluate(MLPclassifier, X_train, y_train, X_test, y_test)
+
