@@ -12,8 +12,9 @@ from nltk.tokenize import word_tokenize, TweetTokenizer
 class FeatureExtractor:
     def __init__(self, documents, labels, tokenizer=None, stop_words=None, bag_file=None):
         self.documents = documents
-        self.labels = labels
-        self.classes = labels.columns
+        if not labels is None:
+            self.labels = labels
+            self.classes = labels.columns
         self.pos_labels = ['joy', 'love', 'optimism', 'trust']
         self.neg_labels = ['anger', 'disgust', 'fear', 'pessimism', 'sadness']
         
@@ -126,7 +127,9 @@ class FeatureExtractor:
                 
 # document length in words (basically, len(tokenizer(text)) #
     def get_doc_len(self, text):
-        return len([word for word in self.tokenizer(text) if word not in string.punctuation])
+        if [word for word in self.tokenizer(text) if word not in string.punctuation]:
+            return len([word for word in self.tokenizer(text) if word not in string.punctuation])
+        return 1
 
     def feature_doc_len(self):
         return self.documents.apply(self.get_doc_len).to_frame(name='doc_len')

@@ -13,6 +13,7 @@ import argparse
 import pickle
 import emoji
 import pandas as pd
+from csv import writer
 from sentiment_dict_reader import SentimentDictReader
 
 from io import StringIO
@@ -35,34 +36,36 @@ def read_source(filepath):
         return tweets
 
 def build_features(tweets):
-    df = pd.DataFrame(tweets, columns='TWEETS')
+    df = pd.DataFrame(tweets, columns=["TWEET"])
 
     positive_words = SentimentDictReader("dictionaries/augmented/positive-words_semeval.txt")
+    positive_bigrams = SentimentDictReader("dictionaries/dataset_positive_bigrams")
     negative_words = SentimentDictReader("dictionaries/augmented/negative-words_semeval.txt")
+    negative_bigrams = SentimentDictReader("dictionaries/dataset_negative_bigrams")
 
-    more_features = Extractor.FeatureExtractor(df, None, tokenizer=TweetTokenizer(reduce_len=True).tokenize, bag_file=None)
+    more_features = Extractor.FeatureExtractor(df['TWEET'], None, tokenizer=TweetTokenizer(reduce_len=True).tokenize, bag_file=None)
 
-    df["EMOJI"] = df.apply(lambda row: get_emoji(row), axis=1)
-    df["HAS_QUESTION_MARK"] = df.apply(lambda row: check_question_mark(row), axis=1)
+    df["EMOJI"] = df.apply(lambda row: SVM.get_emoji(row), axis=1)
+    df["HAS_QUESTION_MARK"] = df.apply(lambda row: SVM.check_question_mark(row), axis=1)
     df["NUM_WORDS"] = df.apply(lambda row: len(row['TWEET'].split(' ')), axis=1)
     df["NUM_POSITIVE_WORDS"] = df.apply(
-        lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), positive_words.words)), axis=1)
+        lambda row: len(SVM.get_sentence_dict_intersection(row["TWEET"].split(" "), positive_words.words)), axis=1)
     df["NUM_NEGATIVE_WORDS"] = df.apply(
-        lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), negative_words.words)), axis=1)
+        lambda row: len(SVM.get_sentence_dict_intersection(row["TWEET"].split(" "), negative_words.words)), axis=1)
     emoji_encoder = preprocessing.LabelEncoder()
     emoji_encoder.fit(df["EMOJI"])
     df["EMOJI"] = pd.Series(emoji_encoder.transform(df["EMOJI"]))
 
     df["NUM_POSITIVE_BIGRAMS"] = df.apply(
-        lambda row: len(get_sentence_bigram_intersection(row["TWEET"], positive_bigrams.words)), axis=1)
+        lambda row: len(SVM.get_sentence_bigram_intersection(row["TWEET"], positive_bigrams.words)), axis=1)
     df["NUM_NEGATIVE_BIGRAMS"] = df.apply(
-        lambda row: len(get_sentence_bigram_intersection(row["TWEET"], negative_bigrams.words)), axis=1)
+        lambda row: len(SVM.get_sentence_bigram_intersection(row["TWEET"], negative_bigrams.words)), axis=1)
 
     df["FRAC_LOWER_CASE"] = more_features.feature_fraction_lower()
     df["FRAC_UPPER_CASE"] = more_features.feature_fraction_upper()
     df["FRAC_TITLED"] = more_features.feature_fraction_titled()
             
-    return df
+    return df.drop(['TWEET'], axis=1)
 
 def process_tweets(data, clf):
     predictions = clf.predict(data)
@@ -71,7 +74,7 @@ def process_tweets(data, clf):
     num_neg = 0
 
     for pred in predictions:
-        if predictions[pred]:
+        if pred:
             num_pos += 1
         else:
             num_neg += 1
@@ -79,40 +82,41 @@ def process_tweets(data, clf):
     return num_pos, num_neg
 
 def main():
-    svm = True
-    dec = True
-    mlp = True
+    tweets = read_source('tweet_data/trump10000since2016.json')
 
-    tweets = read_source('tweet_data/trump100.json')
+    with open("trump10000.csv", 'w') as csv_file:
+        
+        csv_writer = writer(csv_file)
 
-    if svm:
+        csv_writer.writerow(['month', 'svm positive', 'svm negative', 'decision tree positive', 'decision tree negative', 'mlp positive', 'mlp negative'])
+    
         with open('svm.clf', 'rb') as file:
             svm_clf = pickle.load(file)
 
-    if dec:
+
         with open('decision.clf', 'rb') as file:
             dec_clf = pickle.load(file)
 
-    if mlp:
+        
         with open('mlp.clf', 'rb') as file:
             mlp_clf = pickle.load(file)
+            
         
-    
-    for month in tweets:
-        features = build_features(tweets[month])
-        
-        total_tweets = len(tweets[month])
-        
-        if svm:
+        for month in tweets:
+            features = build_features(tweets[month])
+            
+            total_tweets = len(tweets[month])
+            
+            
             svm_pos, svm_neg = process_tweets(features, svm_clf)
 
-        if dec:
+            
             dec_pos, dec_neg = process_tweets(features, dec_clf)
 
-        if mlp:
+            
             mlp_pos, mlp_neg = process_tweets(features, mlp_clf)
 
-        print(month + ' positive %: ', '\n\tsvm: ', str(svm_pos / total_tweets), '\n\tdec: ', str(dec_pos / total_tweets), '\n\tmlp: ', str(mlp_pos / total_tweets))
+            csv_writer.writerow([month, str((svm_pos / total_tweets) * 100), str((svm_neg / total_tweets) * 100), str((dec_pos / total_tweets) * 100), str((dec_neg / total_tweets) * 100), str((mlp_pos / total_tweets) * 100), str((mlp_neg / total_tweets) * 100)])
 
 if __name__ == '__main__':
     main()
