@@ -23,7 +23,7 @@ class TweetReader:
         self.data = None
         self.tweet_column_name=tweet_column_name
     
-    def read_tweets(self, file, strip_mentions=True, sep_char=','):
+    def read_tweets(self, file, strip_mentions=True, sep_char=',', unlabeled=False):
         self.data = pd.read_csv(file, sep=sep_char, encoding='utf8').drop('ID', axis=1)
         
         if strip_mentions:
@@ -32,7 +32,10 @@ class TweetReader:
             #pd.options.display.encoding = 'unicode'
 
         data_df = self.data[self.tweet_column_name]
-        label_df = self.data[self.labels]
+        if not unlabeled:
+            label_df = self.data[self.labels]
+        else:
+            label_df = pd.DataFrame()
 
         return data_df, label_df
 

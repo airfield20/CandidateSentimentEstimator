@@ -6,6 +6,9 @@ from sklearn import preprocessing
 from sklearn.model_selection import train_test_split
 from sklearn import metrics
 from TweetReader import TweetReader
+import FeatureExtraction as Extractor
+from nltk import TweetTokenizer
+import argparse
 import emoji
 import pandas as pd
 from sentiment_dict_reader import SentimentDictReader
@@ -114,10 +117,41 @@ def get_most_frequent_pos(df, labels):
     df.apply(lambda row: add_to_dict(row["TWEET"].split(" ")), axis=1)
 
 
+def setup():
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('data', help='path to the data to be used')
+    arg_parser.add_argument('-l', '--load', help='specifies that data is to be loaded from pickled source, not read', action='store_true')
+    arg_parser.add_argument('-b', '--bag', help='specifies location of pickled word bags', type=str, default=None)
+    classifier_group = arg_parser.add_argument_group('classifiers', 'specify what classifier should be used')
+    classifier_group.add_argument('--svm', help='use the svm classifier', action='store_true')
+    classifier_group.add_argument('--decision', help='use the decision tree classifier', action='store_true')
+    classifier_group.add_argument('--mlp', help='use the mlp classifier', action='store_true')
+    classifier_group.add_argument('--all', help='use all classifiers', action='store_true', default=True)
+
+    args = arg_parser.parse_args()
+
+    return (args.data, args.load, args.bag, args.svm, args.decision, args.mlp, args.all)
+
+
 if __name__ == '__main__':
+    data, load_data, bag_file, use_svm, use_decision, use_mlp, use_all = setup()
+
+    if (use_svm or use_decision or use_mlp):
+        use_all = False
+
     reader = TweetReader()
-    docs_df, label_df = reader.load_tweets('tweet_data/tweet_training.pickle')
+
+    if load_data:
+        docs_df, label_df = reader.load_tweets(data) #'tweet_data/tweet_training.pickle'
+    else:
+        docs_df, label_df = reader.read_tweets(data, sep_char='\t')
+
+    more_features = Extractor.FeatureExtractor(docs_df, label_df, tokenizer=TweetTokenizer(reduce_len=True).tokenize, bag_file=bag_file)
+
+    ''' FEATURES '''
+
     df = pd.DataFrame()
+
     # positive_words = SentimentDictReader("dictionaries/positive-words.txt")
     positive_words = SentimentDictReader("dictionaries/augmented/positive-words_semeval.txt")
     positive_bigrams = SentimentDictReader("dictionaries/dataset_positive_bigrams")
@@ -143,7 +177,14 @@ if __name__ == '__main__':
     emoji_encoder = preprocessing.LabelEncoder()
     emoji_encoder.fit(df["EMOJI"])
     df["EMOJI"] = pd.Series(emoji_encoder.transform(df["EMOJI"]))
+
+    df["FRAC_LOWER_CASE"] = more_features.feature_fraction_lower()
+    df["FRAC_UPPER_CASE"] = more_features.feature_fraction_upper()
+    df["FRAC_TITLED"] = more_features.feature_fraction_titled()
+
     # get_unigram_dataframe(df)
+
+    ''' TRAINING '''
 
     X_train, X_test, y_train, y_test = train_test_split(df, labels, test_size=0.25)
     unigram_encoder = get_unigram_encoder(df)
@@ -164,22 +205,17 @@ if __name__ == '__main__':
         # print("Classification report: ")
         # print(str(report))
 
+    if(use_svm or use_all):
+        print('-------------SVM CLASSIFIER---------------')
+        SVMclassifier = svm.SVC()
+        classify_and_evaluate(SVMclassifier, X_train, y_train, X_test, y_test)
 
-    SVMclassifier = svm.SVC()
-    # classifier.fit(X_train, y_train)
+    if use_decision or use_all:
+        print('-------------Decision Tree CLASSIFIER---------------')
+        DTclassifier = DecisionTreeClassifier()
+        classify_and_evaluate(DTclassifier, X_train, y_train, X_test, y_test)
 
-    DTclassifier = DecisionTreeClassifier()
-    # classifier.fit(X_train, y_train)
-
-    MLPclassifier = MLPClassifier()
-    # classifier.fit(X_train, y_train)
-
-    # y_pred = classifier.predict(X_test)
-    print('-------------SVM CLASSIFIER---------------')
-    classify_and_evaluate(SVMclassifier, X_train, y_train, X_test, y_test)
-    print('-------------Decision Tree CLASSIFIER---------------')
-    classify_and_evaluate(DTclassifier, X_train, y_train, X_test, y_test)
-    print('-------------MLP CLASSIFIER---------------')
-    classify_and_evaluate(MLPclassifier, X_train, y_train, X_test, y_test)
-
-    x = 10
+    if use_mlp or use_all:
+        print('-------------MLP CLASSIFIER---------------')
+        MLPclassifier = MLPClassifier()
+        classify_and_evaluate(MLPclassifier, X_train, y_train, X_test, y_test)
