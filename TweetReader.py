@@ -36,7 +36,7 @@ class TweetReader:
             label_df = self.data[self.labels]
         else:
             label_df = pd.DataFrame()
-
+            
         return data_df, label_df
 
     def save_tweets(self, path):
