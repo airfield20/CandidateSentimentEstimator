@@ -13,8 +13,9 @@ import pickle
 import emoji
 import pandas as pd
 from sentiment_dict_reader import SentimentDictReader
+import nltk
 
-exclude_chars = '#,.\'"`~(): '
+exclude_chars = '#,.\'"`~(): \n*/\\^'
 
 
 def pos_or_neg(row):
@@ -58,6 +59,17 @@ def check_question_mark(row):
 def get_sentence_dict_intersection(words, dict):
     temp = set(dict)
     lst3 = [value for value in words if value.strip(exclude_chars) in temp]
+    return lst3
+
+
+def get_sentence_bigram_intersection(sentence, bigrams):
+    tokens = nltk.word_tokenize(sentence)
+    sentence_bigrams = list(nltk.bigrams(tokens))
+    bigram_strings = []
+    for bigram in sentence_bigrams:
+        bigram_strings.append(emoji.demojize(bigram[0].strip(exclude_chars) + ' ' + bigram[1].strip(exclude_chars)).lower())
+    temp = set(bigrams)
+    lst3 = [value for value in bigram_strings if value in temp]
     return lst3
 
 
@@ -128,43 +140,42 @@ if __name__ == '__main__':
 
     if (use_svm or use_decision or use_mlp):
         use_all = False
-    
+
     reader = TweetReader()
 
     if load_data:
         docs_df, label_df = reader.load_tweets(data) #'tweet_data/tweet_training.pickle'
     else:
         docs_df, label_df = reader.read_tweets(data, sep_char='\t')
-        
+
     more_features = Extractor.FeatureExtractor(docs_df, label_df, tokenizer=TweetTokenizer(reduce_len=True).tokenize, bag_file=bag_file)
 
     ''' FEATURES '''
-    
+
     df = pd.DataFrame()
-    
+
     # positive_words = SentimentDictReader("dictionaries/positive-words.txt")
     positive_words = SentimentDictReader("dictionaries/augmented/positive-words_semeval.txt")
+    positive_bigrams = SentimentDictReader("dictionaries/dataset_positive_bigrams")
     # negative_words = SentimentDictReader("dictionaries/negative-words.txt")
     negative_words = SentimentDictReader("dictionaries/augmented/negative-words_semeval.txt")
-    
+    negative_bigrams = SentimentDictReader("dictionaries/dataset_negative_bigrams")
+
     df["TWEET"] = docs_df
-    
     # df["IS_POS"] = get_pos_neg_labels(label_df)
-    
     labels = get_pos_neg_labels(label_df)
     df["EMOJI"] = df.apply(lambda row: get_emoji(row), axis=1)
     df["HAS_QUESTION_MARK"] = df.apply(lambda row: check_question_mark(row), axis=1)
-    
     df["NUM_WORDS"] = df.apply(lambda row: len(row['TWEET'].split(' ')), axis=1)
-    #df["NUM_WORDS"] = more_features.feature_doc_len()
-    
     df["NUM_POSITIVE_WORDS"] = df.apply(
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), positive_words.words)), axis=1)
     df["NUM_NEGATIVE_WORDS"] = df.apply(
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), negative_words.words)), axis=1)
+    df["NUM_POSITIVE_BIGRAMS"] = df.apply(
+        lambda row: len(get_sentence_bigram_intersection(row["TWEET"], positive_bigrams.words)), axis=1)
+    df["NUM_NEGATIVE_BIGRAMS"] = df.apply(
+        lambda row: len(get_sentence_bigram_intersection(row["TWEET"], negative_bigrams.words)), axis=1)
 
-    # df[["NUM_POSITIVE_WORDS", "NUM_NEGATIVE_WORDS"]] = more_features.feature_count_pos_neg()
-    
     emoji_encoder = preprocessing.LabelEncoder()
     emoji_encoder.fit(df["EMOJI"])
     df["EMOJI"] = pd.Series(emoji_encoder.transform(df["EMOJI"]))
@@ -172,9 +183,9 @@ if __name__ == '__main__':
     df["FRAC_LOWER_CASE"] = more_features.feature_fraction_lower()
     df["FRAC_UPPER_CASE"] = more_features.feature_fraction_upper()
     df["FRAC_TITLED"] = more_features.feature_fraction_titled()
-    
+
     # get_unigram_dataframe(df)
-    
+
     ''' TRAINING '''
 
     X_train, X_test, y_train, y_test = train_test_split(df, labels, test_size=0.25)
@@ -182,62 +193,40 @@ if __name__ == '__main__':
     X_train = X_train.drop(["TWEET"], axis=1)
     X_test = X_test.drop(["TWEET"], axis=1)
 
-    if use_svm or use_all:
-        classifier = svm.SVC()
-        classifier.fit(X_train, y_train)
-        y_pred = classifier.predict(X_test)
 
-        f1_score = metrics.f1_score(y_test, y_pred)
-        accuracy = metrics.accuracy_score(y_test, y_pred)
-        report = metrics.classification_report(y_test, y_pred)
+    def classify_and_evaluate(classifier, xtrain, ytrain, xtest, ytest):
+        classifier.fit(xtrain, ytrain)
+        ypred = classifier.predict(xtest)
+        f1_score = metrics.f1_score(ytest, ypred)
+        accuracy = metrics.accuracy_score(ytest, ypred)
+        report = metrics.classification_report(ytest, ypred)
 
         # Print out results
-        print("------------- SVM -------------")
         print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
         print("F1 score: " + str(f1_score) + "\n")
-        print("Classification report: ")
-        print(str(report))
-
+        # print("Classification report: ")
+        # print(str(report))
+        
+    if(use_svm or use_all):
+        print('-------------SVM CLASSIFIER---------------')
+        SVMclassifier = svm.SVC()
+        classify_and_evaluate(SVMclassifier, X_train, y_train, X_test, y_test)
         if save_path:
             with open('svm.clf', 'wb') as file:
-                pickle.dump(classifier, file)
+                pickle.dump(SVMclassifier, file)
 
     if use_decision or use_all:
-        classifier = DecisionTreeClassifier()
-        classifier.fit(X_train, y_train)
-        y_pred = classifier.predict(X_test)
-
-        f1_score = metrics.f1_score(y_test, y_pred)
-        accuracy = metrics.accuracy_score(y_test, y_pred)
-        report = metrics.classification_report(y_test, y_pred)
-
-        # Print out results
-        print("------------- Decision Tree -------------")
-        print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
-        print("F1 score: " + str(f1_score) + "\n")
-        print("Classification report: ")
-        print(str(report))
-        
+        print('-------------Decision Tree CLASSIFIER---------------')
+        DTclassifier = DecisionTreeClassifier()
+        classify_and_evaluate(DTclassifier, X_train, y_train, X_test, y_test)
         if save_path:
             with open('decision.clf', 'wb') as file:
-                pickle.dump(classifier, file)
+                pickle.dump(DTclassifier, file)
 
     if use_mlp or use_all:
-        classifier = MLPClassifier()
-        classifier.fit(X_train, y_train)
-        y_pred = classifier.predict(X_test)
-
-        f1_score = metrics.f1_score(y_test, y_pred)
-        accuracy = metrics.accuracy_score(y_test, y_pred)
-        report = metrics.classification_report(y_test, y_pred)
-
-        # Print out results
-        print("------------- MLP -------------")
-        print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
-        print("F1 score: " + str(f1_score) + "\n")
-        print("Classification report: ")
-        print(str(report))
-
+        print('-------------MLP CLASSIFIER---------------')
+        MLPclassifier = MLPClassifier()
+        classify_and_evaluate(MLPclassifier, X_train, y_train, X_test, y_test)
         if save_path:
             with open('mlp.clf', 'wb') as file:
-                pickle.dump(classifier, file)
+                pickle.dump(MLPclassifier, file)

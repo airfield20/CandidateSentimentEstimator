@@ -66,7 +66,7 @@ class FeatureExtractor:
             pickle.dump(self.bags, file)
 
     def reduce_bag_to_pos_neg(self):
-        assert self.bags, "No word bag found. Did you call create_word_bags() before this?"
+        # assert not self.bags.empty(), "No word bag found. Did you call create_word_bags() before this?"
 
         self.positive = set()
         self.negative = set()
