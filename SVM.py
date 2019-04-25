@@ -9,8 +9,9 @@ from TweetReader import TweetReader
 import emoji
 import pandas as pd
 from sentiment_dict_reader import SentimentDictReader
+import nltk
 
-exclude_chars = '#,.\'"`~(): '
+exclude_chars = '#,.\'"`~(): \n*/\\^'
 
 
 def pos_or_neg(row):
@@ -54,6 +55,17 @@ def check_question_mark(row):
 def get_sentence_dict_intersection(words, dict):
     temp = set(dict)
     lst3 = [value for value in words if value.strip(exclude_chars) in temp]
+    return lst3
+
+
+def get_sentence_bigram_intersection(sentence, bigrams):
+    tokens = nltk.word_tokenize(sentence)
+    sentence_bigrams = list(nltk.bigrams(tokens))
+    bigram_strings = []
+    for bigram in sentence_bigrams:
+        bigram_strings.append(emoji.demojize(bigram[0].strip(exclude_chars) + ' ' + bigram[1].strip(exclude_chars)).lower())
+    temp = set(bigrams)
+    lst3 = [value for value in bigram_strings if value in temp]
     return lst3
 
 
@@ -108,8 +120,11 @@ if __name__ == '__main__':
     df = pd.DataFrame()
     # positive_words = SentimentDictReader("dictionaries/positive-words.txt")
     positive_words = SentimentDictReader("dictionaries/augmented/positive-words_semeval.txt")
+    positive_bigrams = SentimentDictReader("dictionaries/dataset_positive_bigrams")
     # negative_words = SentimentDictReader("dictionaries/negative-words.txt")
     negative_words = SentimentDictReader("dictionaries/augmented/negative-words_semeval.txt")
+    negative_bigrams = SentimentDictReader("dictionaries/dataset_negative_bigrams")
+
     df["TWEET"] = docs_df
     # df["IS_POS"] = get_pos_neg_labels(label_df)
     labels = get_pos_neg_labels(label_df)
@@ -120,6 +135,11 @@ if __name__ == '__main__':
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), positive_words.words)), axis=1)
     df["NUM_NEGATIVE_WORDS"] = df.apply(
         lambda row: len(get_sentence_dict_intersection(row["TWEET"].split(" "), negative_words.words)), axis=1)
+    df["NUM_POSITIVE_BIGRAMS"] = df.apply(
+        lambda row: len(get_sentence_bigram_intersection(row["TWEET"], positive_bigrams.words)), axis=1)
+    df["NUM_NEGATIVE_BIGRAMS"] = df.apply(
+        lambda row: len(get_sentence_bigram_intersection(row["TWEET"], negative_bigrams.words)), axis=1)
+
     emoji_encoder = preprocessing.LabelEncoder()
     emoji_encoder.fit(df["EMOJI"])
     df["EMOJI"] = pd.Series(emoji_encoder.transform(df["EMOJI"]))
@@ -130,25 +150,36 @@ if __name__ == '__main__':
     X_train = X_train.drop(["TWEET"], axis=1)
     X_test = X_test.drop(["TWEET"], axis=1)
 
-    classifier = svm.SVC()
-    classifier.fit(X_train, y_train)
 
-    # classifier = DecisionTreeClassifier()
+    def classify_and_evaluate(classifier, xtrain, ytrain, xtest, ytest):
+        classifier.fit(xtrain, ytrain)
+        ypred = classifier.predict(xtest)
+        f1_score = metrics.f1_score(ytest, ypred)
+        accuracy = metrics.accuracy_score(ytest, ypred)
+        report = metrics.classification_report(ytest, ypred)
+
+        # Print out results
+        print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
+        print("F1 score: " + str(f1_score) + "\n")
+        # print("Classification report: ")
+        # print(str(report))
+
+
+    SVMclassifier = svm.SVC()
     # classifier.fit(X_train, y_train)
 
-    # classifier = MLPClassifier()
+    DTclassifier = DecisionTreeClassifier()
     # classifier.fit(X_train, y_train)
 
-    y_pred = classifier.predict(X_test)
+    MLPclassifier = MLPClassifier()
+    # classifier.fit(X_train, y_train)
 
-    f1_score = metrics.f1_score(y_test, y_pred)
-    accuracy = metrics.accuracy_score(y_test, y_pred)
-    report = metrics.classification_report(y_test, y_pred)
-
-    # Print out results
-    print("Percent Accuracy: " + str(accuracy * 100) + "%\n")
-    print("F1 score: " + str(f1_score) + "\n")
-    print("Classification report: ")
-    print(str(report))
+    # y_pred = classifier.predict(X_test)
+    print('-------------SVM CLASSIFIER---------------')
+    classify_and_evaluate(SVMclassifier, X_train, y_train, X_test, y_test)
+    print('-------------Decision Tree CLASSIFIER---------------')
+    classify_and_evaluate(DTclassifier, X_train, y_train, X_test, y_test)
+    print('-------------MLP CLASSIFIER---------------')
+    classify_and_evaluate(MLPclassifier, X_train, y_train, X_test, y_test)
 
     x = 10
