@@ -9,6 +9,7 @@ from TweetReader import TweetReader
 import FeatureExtraction as Extractor
 from nltk import TweetTokenizer
 import argparse
+import pickle
 import emoji
 import pandas as pd
 from sentiment_dict_reader import SentimentDictReader
@@ -109,6 +110,7 @@ def setup():
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('data', help='path to the data to be used')
     arg_parser.add_argument('-l', '--load', help='specifies that data is to be loaded from pickled source, not read', action='store_true')
+    arg_parser.add_argument('-s', '--save', help='path to save the trained classifiers', default=None)
     arg_parser.add_argument('-b', '--bag', help='specifies location of pickled word bags', type=str, default=None)
     classifier_group = arg_parser.add_argument_group('classifiers', 'specify what classifier should be used')
     classifier_group.add_argument('--svm', help='use the svm classifier', action='store_true')
@@ -118,11 +120,11 @@ def setup():
 
     args = arg_parser.parse_args()
 
-    return (args.data, args.load, args.bag, args.svm, args.decision, args.mlp, args.all)
+    return (args.data, args.load, args.save, args.bag, args.svm, args.decision, args.mlp, args.all)
 
 
 if __name__ == '__main__':
-    data, load_data, bag_file, use_svm, use_decision, use_mlp, use_all = setup()
+    data, load_data, save_path, bag_file, use_svm, use_decision, use_mlp, use_all = setup()
 
     if (use_svm or use_decision or use_mlp):
         use_all = False
@@ -196,6 +198,10 @@ if __name__ == '__main__':
         print("Classification report: ")
         print(str(report))
 
+        if save_path:
+            with open('svm.clf', 'wb') as file:
+                pickle.dump(classifier, file)
+
     if use_decision or use_all:
         classifier = DecisionTreeClassifier()
         classifier.fit(X_train, y_train)
@@ -211,6 +217,10 @@ if __name__ == '__main__':
         print("F1 score: " + str(f1_score) + "\n")
         print("Classification report: ")
         print(str(report))
+        
+        if save_path:
+            with open('decision.clf', 'wb') as file:
+                pickle.dump(classifier, file)
 
     if use_mlp or use_all:
         classifier = MLPClassifier()
@@ -227,3 +237,7 @@ if __name__ == '__main__':
         print("F1 score: " + str(f1_score) + "\n")
         print("Classification report: ")
         print(str(report))
+
+        if save_path:
+            with open('mlp.clf', 'wb') as file:
+                pickle.dump(classifier, file)

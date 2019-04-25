@@ -34,7 +34,7 @@ class TweetReader:
         data_df = self.data[self.tweet_column_name]
         if not unlabeled:
             label_df = self.data[self.labels]
-        else label_df = pd.DataFrame()
+        else: label_df = pd.DataFrame()
 
         return data_df, label_df
 
